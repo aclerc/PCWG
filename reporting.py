@@ -34,8 +34,9 @@ class report:
         self.reportSettings(settingsSheet, analysis)
 
         rowsAfterCurves = []
-        if len(analysis.specifiedPowerCurve.powerCurveLevels) != 0:
-            rowsAfterCurves.append(  self.reportPowerCurve(sh, 1, 0, 'Specified', analysis.specifiedPowerCurve, analysis))
+        if analysis.specifiedPowerCurve is not None:
+            if len(analysis.specifiedPowerCurve.powerCurveLevels) != 0:
+                rowsAfterCurves.append(  self.reportPowerCurve(sh, 1, 0, 'Specified', analysis.specifiedPowerCurve, analysis))
 
         if analysis.hasActualPower:
 
@@ -57,23 +58,23 @@ class report:
             
             if analysis.turbRenormActive:
                 rowsAfterCurves.append(self.reportPowerCurve(sh, 1, 25, 'TurbulenceRenormalisedPower', analysis.allMeasuredTurbCorrectedPowerCurve, analysis) )
-            
-            rowAfterCurves = max(rowsAfterCurves) + 5
-            sh.write(rowAfterCurves-2, 0, "Power Curves Interpolated to Specified Bins:", self.bold_style)
-            specifiedLevels = analysis.specifiedPowerCurve.powerCurveLevels.index
-
-            if analysis.hasShear and analysis.innerMeasuredPowerCurve != None:
-                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 5, 'Inner', analysis.innerMeasuredPowerCurve, specifiedLevels)
-
-            self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 10, 'InnerTurbulence', analysis.innerTurbulenceMeasuredPowerCurve, specifiedLevels)
-
-            if analysis.hasShear and analysis.outerMeasuredPowerCurve != None:
-                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 15, 'Outer', analysis.outerMeasuredPowerCurve, specifiedLevels)
-
-            self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 20, 'All', analysis.allMeasuredPowerCurve, specifiedLevels)
-
-            if analysis.turbRenormActive:
-                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 25, 'TurbulenceRenormalisedPower', analysis.allMeasuredTurbCorrectedPowerCurve, specifiedLevels)
+            if analysis.specifiedPowerCurve is not None:
+                rowAfterCurves = max(rowsAfterCurves) + 5
+                sh.write(rowAfterCurves-2, 0, "Power Curves Interpolated to Specified Bins:", self.bold_style)
+                specifiedLevels = analysis.specifiedPowerCurve.powerCurveLevels.index
+    
+                if analysis.hasShear and analysis.innerMeasuredPowerCurve != None:
+                    self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 5, 'Inner', analysis.innerMeasuredPowerCurve, specifiedLevels)
+    
+                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 10, 'InnerTurbulence', analysis.innerTurbulenceMeasuredPowerCurve, specifiedLevels)
+    
+                if analysis.hasShear and analysis.outerMeasuredPowerCurve != None:
+                    self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 15, 'Outer', analysis.outerMeasuredPowerCurve, specifiedLevels)
+    
+                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 20, 'All', analysis.allMeasuredPowerCurve, specifiedLevels)
+    
+                if analysis.turbRenormActive:
+                    self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 25, 'TurbulenceRenormalisedPower', analysis.allMeasuredTurbCorrectedPowerCurve, specifiedLevels)
 
             self.reportPowerDeviations(book, "HubPowerDeviations", analysis.hubPowerDeviations, gradient)
             #self.reportPowerDeviations(book, "HubPowerDeviationsInnerShear", analysis.hubPowerDeviationsInnerShear, gradient)
@@ -108,7 +109,7 @@ class report:
         startRow = 2
         col = -5
         for conf,calib in analysis.calibrations:
-            if calib.belowAbove != {}:
+            if 'belowAbove' in calib.calibrationSectorDataframe.columns :
                 belowAbove = True
             else:
                 belowAbove = False
@@ -129,15 +130,18 @@ class report:
 
 
             row+=1
-            for key in sorted(calib.slopes):
+            for key in sorted(calib.calibrationSectorDataframe.index):
                 sh.write(row,col,key, self.bold_style)
-                sh.write(row,col+1,calib.slopes[key], self.four_dp_style)
-                sh.write(row,col+2,calib.offsets[key], self.four_dp_style)
-                if key in calib.counts: sh.write(row,col+3,calib.counts[key], self.no_dp_style)
+                sh.write(row,col+1,calib.calibrationSectorDataframe['Slope'][key], self.four_dp_style)
+                sh.write(row,col+2,calib.calibrationSectorDataframe['Offset'][key], self.four_dp_style)
+                if 'Count' in calib.calibrationSectorDataframe.columns:
+                    sh.write(row,col+3,calib.calibrationSectorDataframe['Count'][key], self.no_dp_style)
                 if belowAbove:
-                    sh.write(row,col+4,calib.belowAbove[key][0], self.no_dp_style)
-                    sh.write(row,col+5,calib.belowAbove[key][1], self.no_dp_style)
-                    sh.write(row,col+6, "TRUE" if calib.belowAbove[key][0]*(analysis.timeStepInSeconds/3600.0) > 6.0 and  calib.belowAbove[key][1]*(analysis.timeStepInSeconds/3600.0) > 6.0 else "FALSE" , self.bold_style)
+                    ba = calib.calibrationSectorDataframe.loc[key,'belowAbove']
+                    sh.write(row,col+4,ba[0], self.no_dp_style)
+                    sh.write(row,col+5,ba[1], self.no_dp_style)
+                    valid = calib.getSectorValidity(key, analysis.timeStepInSeconds)
+                    sh.write(row,col+6, "TRUE" if valid else "FALSE" , self.bold_style)
                 row += 1
 
             if len(conf.calibrationFilters) > 0:
@@ -163,7 +167,7 @@ class report:
                         sh.write(row, col+1, filt.filterType)
                         sh.write(row, col+2, filt.inclusive)
                         sh.write(row, col+3, str(filt))
-                        sh.write(row, col+4, "True") # always true if in list...
+                        sh.write(row, col+4, filt.active) # always true if in list...
                     row += 1
 
 
@@ -599,7 +603,8 @@ class report:
         sh.write(row,8, "NOT YET CALCULATED")
 
         row += 3
-        sh.write_merge(row,row,2,6, "Measured Power Curve\n Reference Air Density = {ref} kg/m^3".format(ref=analysis.specifiedPowerCurve.referenceDensity), self.bold_style)
+        if hasattr(analysis.specifiedPowerCurve,"referenceDensity"):
+            sh.write_merge(row,row,2,6, "Measured Power Curve\n Reference Air Density = {ref} kg/m^3".format(ref=analysis.specifiedPowerCurve.referenceDensity), self.bold_style)
         sh.write(row,7, "Category A Uncertainty", self.bold_style)
         sh.write(row,8, "Category B Uncertainty", self.bold_style)
         sh.write(row,9, "Category C Uncertainty", self.bold_style)
@@ -630,7 +635,7 @@ class report:
             if ws <= analysis.aepCalcLCB.lcb and analysis.allMeasuredPowerCurve.powerCurveLevels[analysis.dataCount][ws] > 0:
                 row+=1
                 sh.write(row,2, binNo+1, self.no_dp_style)
-                sh.write(row,3, ws, self.two_dp_style)
+                sh.write(row,3, analysis.allMeasuredPowerCurve.powerCurveLevels[analysis.inputHubWindSpeed][ws], self.two_dp_style)
                 sh.write(row,4, analysis.allMeasuredPowerCurve.powerCurveLevels[analysis.actualPower][ws], self.two_dp_style)
                 if analysis.powerCoeff in analysis.allMeasuredPowerCurve.powerCurveLevels.columns:
                     sh.write(row,5, analysis.allMeasuredPowerCurve.powerCurveLevels[analysis.powerCoeff][ws], self.two_dp_style)
@@ -647,11 +652,11 @@ class report:
         sh.write(row,6, "TRUE" if timeCovered  > 180 else "FALSE")
         sh.write(row,7, "({0} Hours)".format(round(timeCovered,2)) , self.two_dp_style)
         row+=1
-        windSpeedAt85pct = analysis.specifiedPowerCurve.getThresholdWindSpeed()
-        sh.write_merge(row,row,2,5, "Largest WindSpeed > {0}:".format(round(windSpeedAt85pct*1.5,2)), self.bold_style)
-        sh.write(row,6, "TRUE" if analysis.aepCalcLCB.lcb > windSpeedAt85pct*1.5 else "FALSE")
-        sh.write(row,7, "Threshold is 1.5*(WindSpeed@0.85*RatedPower)")
-        row+=1
+        if hasattr(analysis,"windSpeedAt85pctX1pnt5"):
+            sh.write_merge(row,row,2,5, "Largest WindSpeed > {0}:".format(round(analysis.windSpeedAt85pctX1pnt5,2)), self.bold_style)
+            sh.write(row,6, "TRUE" if analysis.aepCalcLCB.lcb > analysis.windSpeedAt85pctX1pnt5 else "FALSE")
+            sh.write(row,7, "Threshold is 1.5*(WindSpeed@0.85*RatedPower)")
+            row+=1
         sh.write_merge(row,row,2,5, "AEP Extrap. within 1% of AEP LCB:",self.bold_style)
         ans = abs(1-(analysis.aepCalc.AEP/analysis.aepCalcLCB.AEP)) < 0.01
         sh.write(row,6, "TRUE" if ans else "FALSE")
@@ -664,7 +669,34 @@ class report:
             sh.write(row,4, "Turbulence Corrected Extrapolated Pct of Warranted Annual Energy Yield (%)", self.bold_style)
             sh.write(row+1,3, analysis.turbCorrectedAepCalcLCB.AEP*100, self.two_dp_style)
             sh.write(row+1,4, analysis.turbCorrectedAepCalc.AEP*100, self.two_dp_style)
+        row+=2
 
+        sh.write_merge(row,row,3,10,"AEP Distribution",self.bold_style)
+        row+=1
+        sh.write_merge(row,row,3,6, "Reference", self.bold_style)
+        sh.write_merge(row,row,7,10, "Measured", self.bold_style)
+        row+=1
+        sh.write(row,2,"Wind Speed",self.bold_style)
+        sh.write(row,3,'Reference Freq',self.bold_style)
+        sh.write(row,4,'Reference Power',self.bold_style)
+        sh.write(row,5,'Reference Power (Resampled)',self.bold_style)
+        sh.write(row,6,"Reference Energy",self.bold_style)
+        sh.write(row,7,'Measured Freq',self.bold_style)
+        sh.write(row,8,'Measured Power',self.bold_style)
+        sh.write(row,9,'Measured Power (Resampled)',self.bold_style)
+        sh.write(row,10,"Measured Energy",self.bold_style)
+        for binNum in analysis.aepCalc.energy_distribution.index:
+            row+=1
+            sh.write(row,2,binNum,self.two_dp_style)
+            sh.write(row,3,analysis.aepCalc.energy_distribution.loc[binNum,"Reference_Freq"] ,self.four_dp_style)
+            sh.write(row,4,analysis.aepCalc.energy_distribution.loc[binNum,"Reference_Upper"] ,self.four_dp_style)
+            sh.write(row,5,analysis.aepCalc.energy_distribution.loc[binNum,"Reference_Power"] ,self.four_dp_style)
+            sh.write(row,6,analysis.aepCalc.energy_distribution.loc[binNum,"Reference_Energy"] ,self.four_dp_style)
+            sh.write(row,7,analysis.aepCalc.energy_distribution.loc[binNum,"Measured_Freq"] ,self.four_dp_style)
+            sh.write(row,8,analysis.aepCalc.energy_distribution.loc[binNum,"Measured_Upper"] ,self.four_dp_style)
+            sh.write(row,9,analysis.aepCalc.energy_distribution.loc[binNum,"Measured_Power"] ,self.four_dp_style)
+            sh.write(row,10,analysis.aepCalc.energy_distribution.loc[binNum,"Measured_Energy"] ,self.four_dp_style)
+        row+=3
 
     def printPowerCurves(self):
 
@@ -725,7 +757,17 @@ class report:
         for i in range(self.windSpeedBins.numberOfBins):
             text += "%f\t" % self.windSpeedBins.binCenterByIndex(i)
 
-        print text            
+        print text        
+        
+    def report_scatter_metric(self,sh,analysis,row, turbRenormActive):
+        row += 5
+        sh.write(row,   1, "Scatter Metric Before TI Renormalisation:", self.bold_style)
+        sh.write(row+1, 1, analysis.powerCurveScatterMetric, self.percent_style)
+        if turbRenormActive:
+            sh.write(row,   2, "Scatter Metric After TI Renormalisation:", self.bold_style)
+            sh.write(row+1, 2, analysis.powerCurveScatterMetricAfterTiRenorm , self.percent_style)
+        return row + 3
+        
 
 class AnonReport(report):
 
@@ -736,31 +778,44 @@ class AnonReport(report):
         self.turbulenceBins = turbulence_bins
         self.normalisedWindSpeedBins = wind_bins
 
-    def report(self, path, analysis):
+    def report(self, path, analysis, powerDeviationMatrix = True, scatterMetric=True):
         
         self.analysis = analysis
         book = xlwt.Workbook()
-        gradient = colour.ColourGradient(-0.1, 0.1, 0.01, book)
+
 
         sh = book.add_sheet("Anonymous Report", cell_overwrite_ok=True)
         sh.write(0, 0, "PCWG Tool Version Number:")
         sh.write(0, 1, self.version)
         sh.write(0, 2, xlwt.Formula('HYPERLINK("http://www.pcwg.org";"PCWG Website")'))
+        row = 1
 
+        if powerDeviationMatrix:
+            row = self.report_power_deviation_matrix(sh,analysis,book)
+
+        if scatterMetric:
+            row = self.report_scatter_metric(sh,analysis,row, analysis.turbRenormActive)
+
+        book.save(path)
+
+    def report_power_deviation_matrix(self,sh,analysis,book):
+
+        gradient = colour.ColourGradient(-0.1, 0.1, 0.01, book)
         pcStart = 2
         pcEnd   = pcStart + self.normalisedWindSpeedBins.numberOfBins + 5
         
         deviationMatrixStart = pcEnd + 5
+        row= []
 
-        self.reportPowerCurve(sh, pcStart, 0, 'Power Curve', self.targetPowerCurve)
+        row.append( self.reportPowerCurve(sh, pcStart, 0, self.targetPowerCurve.name + ' Power Curve', self.targetPowerCurve) )
 
-        self.reportPowerDeviations(sh,deviationMatrixStart, analysis.normalisedHubPowerDeviations, gradient, "Hub Power")
+        row.append( self.reportPowerDeviations(sh,deviationMatrixStart, analysis.normalisedHubPowerDeviations, gradient, "Hub Power"))
 
         if analysis.normalisedTurbPowerDeviations != None:
             deviationMatrixStart += (self.turbulenceBins.numberOfBins + 5) * 2
-            self.reportPowerDeviations(sh,deviationMatrixStart, analysis.normalisedTurbPowerDeviations, gradient, "Turb Corrected Power")
+            row.append(self.reportPowerDeviations(sh,deviationMatrixStart, analysis.normalisedTurbPowerDeviations, gradient, "Turb Corrected Power") )
 
-        book.save(path)
+        return max(row)
 
     def reportPowerDeviations(self,sh, startRow, powerDeviations, gradient, name):
 
@@ -774,7 +829,7 @@ class AnonReport(report):
             turbulence = self.turbulenceBins.binCenterByIndex(j)
             
             row = startRow + self.turbulenceBins.numberOfBins - j
-            countRow = row + countShift                        
+            countRow = row + countShift
 
             sh.write(row, 0, turbulence, self.percent_no_dp_style)
             sh.write(countRow, 0, turbulence, self.percent_no_dp_style)
@@ -797,6 +852,8 @@ class AnonReport(report):
                         if not np.isnan(deviation):
                             sh.write(row, col, deviation, gradient.getStyle(deviation))
                             sh.write(countRow, col, count, self.no_dp_style)
+                            
+        return startRow + self.turbulenceBins.numberOfBins + countShift
 
     def reportPowerCurve(self, sh, rowOffset, columnOffset, name, powerCurve):
 
