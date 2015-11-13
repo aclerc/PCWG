@@ -21,7 +21,7 @@ class report:
     def report(self, path, analysis):
     
         book = xlwt.Workbook()
-
+        
         plotsDir = analysis.config.path.replace(".xml","_PPAnalysisPlots")
         analysis.png_plots(plotsDir)
 
@@ -34,6 +34,7 @@ class report:
         self.reportSettings(settingsSheet, analysis)
 
         rowsAfterCurves = []
+        #rowsAfterCurves.append(self.reportPowerCurve(sh, 0, 0, 'uniqueAnalysisId', analysis.specifiedPowerCurve, analysis)) #needs fixing + move to settings sheet
         if analysis.specifiedPowerCurve is not None:
             if len(analysis.specifiedPowerCurve.powerCurveLevels) != 0:
                 rowsAfterCurves.append(  self.reportPowerCurve(sh, 1, 0, 'Specified', analysis.specifiedPowerCurve, analysis))
@@ -48,8 +49,9 @@ class report:
 
             if analysis.hasShear and analysis.innerMeasuredPowerCurve != None:
                 rowsAfterCurves.append(self.reportPowerCurve(sh, 1, 5, 'Inner', analysis.innerMeasuredPowerCurve, analysis) )
-                
-            rowsAfterCurves.append( self.reportPowerCurve(sh, 1, 10, 'InnerTurbulence', analysis.innerTurbulenceMeasuredPowerCurve, analysis) )
+            
+            if analysis.innerTurbulenceMeasuredPowerCurve != None:
+                rowsAfterCurves.append( self.reportPowerCurve(sh, 1, 10, 'InnerTurbulence', analysis.innerTurbulenceMeasuredPowerCurve, analysis) )
             
             if analysis.hasShear and analysis.outerMeasuredPowerCurve != None:
                 rowsAfterCurves.append(self.reportPowerCurve(sh, 1, 15, 'Outer', analysis.outerMeasuredPowerCurve, analysis) )
@@ -75,6 +77,9 @@ class report:
     
                 if analysis.turbRenormActive:
                     self.reportInterpolatedPowerCurve(sh, rowAfterCurves, 25, 'TurbulenceRenormalisedPower', analysis.allMeasuredTurbCorrectedPowerCurve, specifiedLevels)
+                    
+                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, (30 if analysis.turbRenormActive else 25), 'DayTime', analysis.dayTimePowerCurve, specifiedLevels)
+                self.reportInterpolatedPowerCurve(sh, rowAfterCurves, (35 if analysis.turbRenormActive else 30), 'NightTime', analysis.nightTimePowerCurve, specifiedLevels)
 
             self.reportPowerDeviations(book, "HubPowerDeviations", analysis.hubPowerDeviations, gradient)
             #self.reportPowerDeviations(book, "HubPowerDeviationsInnerShear", analysis.hubPowerDeviationsInnerShear, gradient)
@@ -94,6 +99,10 @@ class report:
                 self.reportPowerDeviations(book, "CombPowerDeviations", analysis.combPowerDeviations, gradient)
                 #self.reportPowerDeviationsDifference(book, "Hub-Comb-DevDiff", analysis.hubPowerDeviations, analysis.combPowerDeviations, gradient)
                 #self.reportPowerDeviations(book, "CombPowerDeviationsInnerShear", analysis.combPowerDeviationsInnerShear, gradient)
+            if analysis.powerDeviationMatrixActive:
+                self.reportPowerDeviations(book, "PowerDeviationMatrixDeviations", analysis.powerDeviationMatrixDeviations, gradient)
+                #self.reportPowerDeviationsDifference(book, "Hub-Turb-DevDiff", analysis.hubPowerDeviations, analysis.turbPowerDeviations, gradient)
+                #self.reportPowerDeviations(book, "TurbPowerDeviationsInnerShear", analysis.turbPowerDeviationsInnerShear, gradient)
 
             calSheet = book.add_sheet("Calibration", cell_overwrite_ok=True)
             self.reportCalibrations(calSheet,analysis)
@@ -131,7 +140,7 @@ class report:
 
             row+=1
             for key in sorted(calib.calibrationSectorDataframe.index):
-                sh.write(row,col,key, self.bold_style)
+                sh.write(row,col,float(key), self.bold_style)
                 sh.write(row,col+1,calib.calibrationSectorDataframe['Slope'][key], self.four_dp_style)
                 sh.write(row,col+2,calib.calibrationSectorDataframe['Offset'][key], self.four_dp_style)
                 if 'Count' in calib.calibrationSectorDataframe.columns:
@@ -498,9 +507,31 @@ class report:
                 if colname in styles.keys():
                     sh.write(rowOffset + countRow + 1, columnOffset + rowOrders[colname], powerCurveLevels[colname][windSpeed], styles[colname])
             countRow += 1
-
+        
+        if hasattr(powerCurve, 'zeroTurbulencePowerCurve'):
+            countRow += 3
+            try:
+                pc = powerCurve.zeroTurbulencePowerCurve.dfPowerLevels
+                sh.write(rowOffset + countRow, columnOffset + 2, name + ' Zero TI Power Curve', self.bold_style)
+                countRow += 1
+                sh.write(rowOffset + countRow, columnOffset + 1, 'Wind Speed', self.bold_style)
+                sh.write(rowOffset + countRow, columnOffset + 2, 'Power', self.bold_style)
+                for ws in pc.index:
+                    sh.write(rowOffset + countRow + 1, columnOffset + 1, ws, styles['Specified Wind Speed'])
+                    sh.write(rowOffset + countRow + 1, columnOffset + 2, pc.loc[ws, 'Power'], styles['Specified Wind Speed'])
+                    countRow += 1                
+            except:
+                sh.write(rowOffset + countRow, columnOffset + 2,'Zero TI Power Curve not calculated successfully for %s power curve.' % name)
+                countRow+=1
+        else:
+            countRow += 3
+            print "Not reporting zero TI power curve for %s as it is not defined." % (name)
+            sh.write(rowOffset + countRow, columnOffset + 2,"Not reporting zero TI power curve for %s as it is not defined." % (name))
+            countRow+=1
+            
         return countRow
-
+                
+                
     def reportInterpolatedPowerCurve(self, sh, rowOffset, columnOffset, name, powerCurve, levels):
 
         sh.write(rowOffset, columnOffset + 2, name, self.bold_style)

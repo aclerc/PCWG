@@ -9,25 +9,29 @@ import binning
 import warnings
 warnings.simplefilter('ignore', np.RankWarning)
 
+
 def getSeparatorValue(separator):
-
-        separator = separator.upper()
-
-        if separator == "TAB":
-                return "\t"
-        elif separator == "SPACE":
-                return " "
-        elif separator == "COMMA":
-                return ","
-        elif separator == "SEMI-COLON":
-                return ";"
-        else:
-                raise Exception("Unkown separator: '%s'" % separator)
+    try:
+        return {"TAB":"\t",
+                "SPACE":" ",
+                "COMMA": ",",
+                "SEMI-COLON":";"}[separator.upper()]
+    except:
+        raise Exception("Unkown separator: '%s'" % separator)
+        
+def getDecimalValue(decimal):
+    try:
+        return {"FULL STOP":".",
+                "COMMA":","}[decimal.upper()]
+    except:
+        raise Exception("Unkown decimal: '%s'" % decimal)
+        
 
 class DeviationMatrix(object):
     def __init__(self,deviationMatrix,countMatrix):
         self.matrix = deviationMatrix
         self.count  = countMatrix
+
 
 class CalibrationBase:
 
@@ -150,8 +154,15 @@ class SiteCalibrationCalculator:
         self.directionBinColumn = directionBinColumn
 
         if actives != None:
-            self.calibrationSectorDataframe = self.calibrationSectorDataframe.loc[actives,:]
 
+            activeSectors = []
+
+            for direction in actives:
+                if actives[direction]:
+                    activeSectors.append(int(direction))
+                    
+            self.calibrationSectorDataframe = self.calibrationSectorDataframe.loc[activeSectors,:]
+ 
         self.calibrationSectorDataframe['SpeedUpAt10'] = (10*self.calibrationSectorDataframe['Slope'] + self.calibrationSectorDataframe['Offset'])/10.0
         self.IECLimitCalculator()
 
@@ -159,10 +170,14 @@ class SiteCalibrationCalculator:
 
         directionBin = row[self.directionBinColumn]
 
-        if directionBin in self.calibrationSectorDataframe.index:
-            return self.calibrate(directionBin, row[self.valueColumn])
-        else:
-            return np.nan
+        if np.isnan(directionBin): return np.nan
+        if not directionBin in self.calibrationSectorDataframe.index: return np.nan
+
+        value = row[self.valueColumn]
+
+        if np.isnan(value): return np.nan
+
+        return self.calibrate(directionBin, value)
 
     def calibrate(self, directionBin, value):
         return self.calibrationSectorDataframe['Offset'][directionBin] + self.calibrationSectorDataframe['Slope'][directionBin] * value
@@ -170,7 +185,8 @@ class SiteCalibrationCalculator:
     def IECLimitCalculator(self):
         if len(self.calibrationSectorDataframe.index) == 36 and 'vRatio' in self.calibrationSectorDataframe.columns:
             self.calibrationSectorDataframe['pctSpeedUp'] = (self.calibrationSectorDataframe['vRatio']-1)*100
-            self.calibrationSectorDataframe['LowerLimit'] = pd.Series(data=np.roll(((self.calibrationSectorDataframe['vRatio']-1)*100)-2.0,1),index=self.calibrationSectorDataframe.index)
+            self.calibrationSectorDataframe['LowerLimit'] = p
+            d.Series(data=np.roll(((self.calibrationSectorDataframe['vRatio']-1)*100)-2.0,1),index=self.calibrationSectorDataframe.index)
             self.calibrationSectorDataframe['UpperLimit'] = pd.Series(data=np.roll(((self.calibrationSectorDataframe['vRatio']-1)*100)+2.0,1),index=self.calibrationSectorDataframe.index)
             self.calibrationSectorDataframe['IECValid'] = np.logical_and(self.calibrationSectorDataframe['pctSpeedUp'] >  self.calibrationSectorDataframe['LowerLimit'], self.calibrationSectorDataframe['pctSpeedUp'] <  self.calibrationSectorDataframe['UpperLimit'])
             print self.calibrationSectorDataframe[['pctSpeedUp','LowerLimit','UpperLimit','IECValid']]
@@ -249,7 +265,7 @@ class Dataset:
         dateConverter = lambda x: datetime.datetime.strptime(x, config.dateFormat)
         dataFrame = pd.read_csv(self.relativePath.convertToAbsolutePath(config.inputTimeSeriesPath), index_col=config.timeStamp, \
                                 parse_dates = True, date_parser = dateConverter, sep = getSeparatorValue(config.separator), \
-                                skiprows = config.headerRows).replace(config.badData, np.nan)
+                                skiprows = config.headerRows, decimal = getDecimalValue(config.decimal)).replace(config.badData, np.nan)
 
         if config.startDate != None and config.endDate != None:
             dataFrame = dataFrame[config.startDate : config.endDate]
@@ -357,6 +373,7 @@ class Dataset:
         self.fullDataFrame = dataFrame.copy()
         self.dataFrame = self.extractColumns(dataFrame).dropna()
         if self.windDirection in self.dataFrame.columns:
+            self.fullDataFrame[self.windDirection] = self.fullDataFrame[self.windDirection].astype(float)
             self.analysedDirections = (round(self.fullDataFrame[self.windDirection].min() + config.referenceWindDirectionOffset), round(self.fullDataFrame[self.windDirection].max()+config.referenceWindDirectionOffset))
 
     def createShearCalibration(self, dataFrame, config, timeStepInSeconds):
